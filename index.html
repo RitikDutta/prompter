@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Center-Word Prompter</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body data-theme="dark">
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="topbar-copy">
+          <p class="eyebrow">Camera-facing reading flow</p>
+          <h1>Center-Word Prompter</h1>
+          <p class="topbar-subtitle">
+            Paste a long script, break it into small centered phrases, and let
+            the app advance at a steady recording pace.
+          </p>
+        </div>
+
+        <button class="ghost-button theme-toggle" type="button" data-theme-toggle>
+          Light View
+        </button>
+      </header>
+
+      <main class="workspace" aria-label="Center-word prompter workspace">
+        <section class="panel script-panel" aria-labelledby="scriptPanelTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">Script</p>
+              <h2 id="scriptPanelTitle">Paste your recording script</h2>
+            </div>
+            <div class="metric-row" aria-live="polite">
+              <span class="metric-chip" id="wordCountLabel">0 words</span>
+              <span class="metric-chip" id="chunkCountLabel">0 chunks</span>
+              <span class="metric-chip" id="runtimeLabel">0:00 read time</span>
+            </div>
+          </div>
+
+          <label class="field-label" for="scriptInput">Script text</label>
+          <textarea
+            id="scriptInput"
+            class="script-input"
+            spellcheck="false"
+            placeholder="Paste or type your script here. The app will normalize extra spaces and line breaks, then show it back as small centered chunks for smoother eye contact on camera."
+            aria-describedby="scriptHelperText"
+          ></textarea>
+          <p class="helper-text" id="scriptHelperText">
+            Multiple spaces and line breaks are cleaned automatically before the
+            timed reading view starts.
+          </p>
+        </section>
+
+        <aside class="panel controls-panel" aria-labelledby="controlsPanelTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">Playback</p>
+              <h2 id="controlsPanelTitle">Reading setup</h2>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-header">
+              <label for="speedInput">Reading speed</label>
+              <output id="speedValue" for="speedInput">170 WPM</output>
+            </div>
+            <input
+              id="speedInput"
+              class="slider"
+              type="range"
+              min="80"
+              max="260"
+              step="5"
+              value="170"
+            />
+            <p class="setting-note">
+              Timing scales by words per minute and adds subtle pauses after
+              punctuation so the cadence feels less robotic.
+            </p>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-header">
+              <label for="fontSizeInput">Center text size</label>
+              <output id="fontSizeValue" for="fontSizeInput">76 px</output>
+            </div>
+            <input
+              id="fontSizeInput"
+              class="slider"
+              type="range"
+              min="10"
+              max="120"
+              step="2"
+              value="76"
+            />
+            <p class="setting-note">
+              The reading phrase stays locked to the center of the screen for
+              a stable on-camera eye line.
+            </p>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-header">
+              <label for="positionInput">Vertical position</label>
+              <output id="positionValue" for="positionInput">Centered</output>
+            </div>
+            <input
+              id="positionInput"
+              class="slider"
+              type="range"
+              min="-480"
+              max="480"
+              step="4"
+              value="0"
+            />
+            <p class="setting-note">
+              Raise or lower the reading phrase to better line up with your
+              camera placement.
+            </p>
+          </div>
+
+          <div class="setting-group">
+            <div class="setting-header">
+              <span>Chunk size</span>
+              <span id="chunkSizeValue">2 words</span>
+            </div>
+            <div
+              class="segment-control"
+              role="group"
+              aria-label="Chunk size"
+              data-setting-group="chunk-size"
+            >
+              <button class="segment-button" type="button" data-chunk-size="1">
+                1 word
+              </button>
+              <button class="segment-button is-active" type="button" data-chunk-size="2">
+                2 words
+              </button>
+              <button class="segment-button" type="button" data-chunk-size="3">
+                3 words
+              </button>
+            </div>
+            <p class="setting-note">
+              Smaller chunks reduce visible side-to-side eye movement while you
+              record.
+            </p>
+          </div>
+
+          <div class="info-card">
+            <p class="section-kicker">Quick keys</p>
+            <p class="info-copy">Space play or pause. Left and right move one chunk. Up and down fine-tune speed.</p>
+          </div>
+
+          <div class="action-block">
+            <button id="startButton" class="primary-button" type="button">
+              Load and Start
+            </button>
+            <p class="validation-message" id="validationMessage" aria-live="polite">
+              Paste a script to enable reading mode.
+            </p>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <section class="reader-view" id="readerView" hidden aria-label="Reading mode">
+      <div class="reader-hud">
+        <div class="status-pill" id="readerStatus">Ready</div>
+
+        <div class="hud-actions">
+          <button class="ghost-button theme-toggle" type="button" data-theme-toggle>
+            Light View
+          </button>
+          <button class="ghost-button" type="button" id="fullscreenButton">
+            Fullscreen
+          </button>
+          <button class="ghost-button" type="button" id="backButton">
+            Back to Edit
+          </button>
+        </div>
+      </div>
+
+      <div class="reader-stage" aria-live="polite">
+        <div class="center-glow" aria-hidden="true"></div>
+        <p class="chunk-display" id="chunkDisplay">Ready</p>
+      </div>
+
+      <div class="reader-dock" role="group" aria-label="Playback controls">
+        <div class="progress-block">
+          <div class="progress-copy">
+            <span id="progressLabel">0 / 0</span>
+            <span id="progressPercent">0%</span>
+          </div>
+          <div class="progress-track" aria-hidden="true">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+        </div>
+
+        <div class="reader-dock-row">
+          <div class="transport-group">
+            <button class="secondary-button" type="button" id="previousButton">
+              Prev
+            </button>
+            <button class="primary-button" type="button" id="playButton">
+              Play
+            </button>
+            <button class="secondary-button" type="button" id="pauseButton">
+              Pause
+            </button>
+            <button class="secondary-button" type="button" id="restartButton">
+              Restart
+            </button>
+            <button class="secondary-button" type="button" id="nextButton">
+              Next
+            </button>
+          </div>
+
+          <div class="inline-settings">
+            <div class="stepper" aria-label="Speed controls">
+              <span class="stepper-label">Speed</span>
+              <button type="button" class="stepper-button" data-speed-step="-5">-</button>
+              <span class="stepper-value" id="readerSpeedValue">170 WPM</span>
+              <button type="button" class="stepper-button" data-speed-step="5">+</button>
+            </div>
+
+            <div class="stepper" aria-label="Font size controls">
+              <span class="stepper-label">Text</span>
+              <button type="button" class="stepper-button" data-font-step="-2">-</button>
+              <span class="stepper-value" id="readerFontValue">76 px</span>
+              <button type="button" class="stepper-button" data-font-step="2">+</button>
+            </div>
+
+            <div class="stepper position-stepper" aria-label="Vertical position controls">
+              <span class="stepper-label">Position</span>
+              <button type="button" class="stepper-button" data-position-step="-8">Up</button>
+              <span class="stepper-value" id="readerPositionValue">Centered</span>
+              <button type="button" class="stepper-button" data-position-step="8">Down</button>
+            </div>
+
+            <div
+              class="segment-control compact"
+              role="group"
+              aria-label="Reader chunk size"
+              data-setting-group="chunk-size"
+            >
+              <button class="segment-button" type="button" data-chunk-size="1">1</button>
+              <button class="segment-button is-active" type="button" data-chunk-size="2">2</button>
+              <button class="segment-button" type="button" data-chunk-size="3">3</button>
+            </div>
+          </div>
+        </div>
+
+        <p class="shortcut-hint">
+          Space play or pause. Left and right move chunks. Up and down adjust speed.
+        </p>
+      </div>
+    </section>
+
+    <script src="script.js"></script>
+  </body>
+</html>
