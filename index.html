@@ -37,18 +37,63 @@
             </div>
           </div>
 
-          <label class="field-label" for="scriptInput">Script text</label>
-          <textarea
-            id="scriptInput"
-            class="script-input"
-            spellcheck="false"
-            placeholder="Paste or type your script here. The app will normalize extra spaces and line breaks, then show it back as small centered chunks for smoother eye contact on camera."
-            aria-describedby="scriptHelperText"
-          ></textarea>
-          <p class="helper-text" id="scriptHelperText">
-            Multiple spaces and line breaks are cleaned automatically before the
-            timed reading view starts.
-          </p>
+          <div class="view-switcher" role="group" aria-label="Script source view">
+            <button
+              class="view-switcher-button is-active"
+              type="button"
+              data-script-view="editor"
+              aria-pressed="true"
+            >
+              Editor
+            </button>
+            <button
+              class="view-switcher-button"
+              type="button"
+              data-script-view="library"
+              aria-pressed="false"
+            >
+              Library
+            </button>
+          </div>
+
+          <div class="script-view" data-script-view-panel="editor">
+            <div class="field-row">
+              <label class="field-label" for="scriptInput">Script text</label>
+              <span class="metric-chip source-chip" id="scriptSourceLabel">
+                Manual draft
+              </span>
+            </div>
+            <textarea
+              id="scriptInput"
+              class="script-input"
+              spellcheck="false"
+              placeholder="Paste or type your script here. The app will normalize extra spaces and line breaks, then show it back as small centered chunks for smoother eye contact on camera."
+              aria-describedby="scriptHelperText"
+            ></textarea>
+            <p class="helper-text" id="scriptHelperText">
+              Multiple spaces and line breaks are cleaned automatically before the
+              timed reading view starts.
+            </p>
+          </div>
+
+          <div class="script-view library-view" data-script-view-panel="library" hidden>
+            <div class="library-header">
+              <div>
+                <p class="section-kicker">Saved scripts</p>
+                <h3 class="library-title-heading">Choose a text file to load</h3>
+              </div>
+              <p class="library-status" id="libraryStatus" aria-live="polite">
+                0 saved scripts
+              </p>
+            </div>
+
+            <div class="library-list" id="libraryList" role="list"></div>
+
+            <p class="helper-text">
+              Add `.txt` files inside the `library/` folder, then run
+              `node sync-library.mjs` to refresh this saved-script list.
+            </p>
+          </div>
         </section>
 
         <aside class="panel controls-panel" aria-labelledby="controlsPanelTitle">
@@ -256,6 +301,7 @@
       </div>
     </section>
 
+    <script src="library-data.js"></script>
     <script src="script.js"></script>
   </body>
 </html>

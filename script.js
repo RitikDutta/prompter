@@ -60,6 +60,23 @@ function formatVerticalOffset(offset, bounds = null) {
   return `${Math.abs(offset)} px ${offset < 0 ? "up" : "down"}`;
 }
 
+function formatLibraryTitle(fileName) {
+  return fileName
+    .replace(/\.[^.]+$/, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (match) => match.toUpperCase());
+}
+
+function buildLibraryPreview(text, maxLength = 160) {
+  const normalizedText = ScriptParser.normalize(text || "");
+
+  if (normalizedText.length <= maxLength) {
+    return normalizedText;
+  }
+
+  return `${normalizedText.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
 function loadSettings() {
   try {
     const savedSettings = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
@@ -421,11 +438,14 @@ class PrompterEngine {
 class PrompterApp {
   constructor() {
     this.settings = loadSettings();
+    this.libraryItems = [];
+    this.activeScriptView = "editor";
     this.engine = new PrompterEngine((snapshot) => this.renderReader(snapshot));
 
     this.elements = {
       body: document.body,
       scriptInput: document.getElementById("scriptInput"),
+      scriptSourceLabel: document.getElementById("scriptSourceLabel"),
       wordCountLabel: document.getElementById("wordCountLabel"),
       chunkCountLabel: document.getElementById("chunkCountLabel"),
       runtimeLabel: document.getElementById("runtimeLabel"),
@@ -454,7 +474,11 @@ class PrompterApp {
       readerSpeedValue: document.getElementById("readerSpeedValue"),
       readerFontValue: document.getElementById("readerFontValue"),
       readerPositionValue: document.getElementById("readerPositionValue"),
+      libraryList: document.getElementById("libraryList"),
+      libraryStatus: document.getElementById("libraryStatus"),
       themeToggles: [...document.querySelectorAll("[data-theme-toggle]")],
+      scriptViewButtons: [...document.querySelectorAll("[data-script-view]")],
+      scriptViewPanels: [...document.querySelectorAll("[data-script-view-panel]")],
       chunkButtons: [...document.querySelectorAll("[data-chunk-size]")],
       speedStepButtons: [...document.querySelectorAll("[data-speed-step]")],
       fontStepButtons: [...document.querySelectorAll("[data-font-step]")],
@@ -463,6 +487,8 @@ class PrompterApp {
 
     this.bindEvents();
     this.applySettingsToUI();
+    this.setScriptView(this.activeScriptView);
+    this.loadLibraryItems();
     this.updateScriptMetrics();
     this.renderReader({
       chunk: null,
@@ -478,8 +504,29 @@ class PrompterApp {
 
   bindEvents() {
     this.elements.scriptInput.addEventListener("input", () => {
+      this.setScriptSourceLabel("Editing draft");
       this.clearValidationMessage();
       this.updateScriptMetrics();
+    });
+
+    this.elements.scriptViewButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        this.setScriptView(button.dataset.scriptView);
+      });
+    });
+
+    this.elements.libraryList.addEventListener("click", (event) => {
+      const trigger = event.target.closest("[data-library-index]");
+
+      if (!trigger) {
+        return;
+      }
+
+      const libraryItem = this.libraryItems[Number(trigger.dataset.libraryIndex)];
+
+      if (libraryItem) {
+        this.loadLibraryItem(libraryItem);
+      }
     });
 
     this.elements.speedInput.addEventListener("input", (event) => {
@@ -541,6 +588,131 @@ class PrompterApp {
       }
     });
     window.addEventListener("resize", () => this.handleViewportChange());
+  }
+
+  setScriptSourceLabel(label) {
+    this.elements.scriptSourceLabel.textContent = label;
+  }
+
+  setScriptView(viewName) {
+    this.activeScriptView = viewName === "library" ? "library" : "editor";
+
+    this.elements.scriptViewButtons.forEach((button) => {
+      const isActive = button.dataset.scriptView === this.activeScriptView;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", String(isActive));
+    });
+
+    this.elements.scriptViewPanels.forEach((panel) => {
+      panel.hidden = panel.dataset.scriptViewPanel !== this.activeScriptView;
+    });
+  }
+
+  loadLibraryItems() {
+    const rawLibraryItems = Array.isArray(window.PROMPTER_LIBRARY)
+      ? window.PROMPTER_LIBRARY
+      : [];
+
+    this.libraryItems = rawLibraryItems
+      .map((item, index) => {
+        if (!item || typeof item.content !== "string") {
+          return null;
+        }
+
+        const content = item.content.trim();
+
+        if (!content) {
+          return null;
+        }
+
+        const fileName =
+          typeof item.fileName === "string" && item.fileName.trim()
+            ? item.fileName.trim()
+            : `script-${index + 1}.txt`;
+
+        return {
+          title:
+            typeof item.title === "string" && item.title.trim()
+              ? item.title.trim()
+              : formatLibraryTitle(fileName),
+          fileName,
+          description:
+            typeof item.description === "string" && item.description.trim()
+              ? item.description.trim()
+              : "Saved text file",
+          content,
+          preview: buildLibraryPreview(content),
+          wordCount: ScriptParser.tokenize(content).length,
+        };
+      })
+      .filter(Boolean);
+
+    this.renderLibraryItems();
+  }
+
+  renderLibraryItems() {
+    this.elements.libraryList.textContent = "";
+
+    if (!this.libraryItems.length) {
+      const emptyState = document.createElement("div");
+      emptyState.className = "library-empty";
+      emptyState.textContent = "No saved scripts have been added yet.";
+      this.elements.libraryList.append(emptyState);
+      this.elements.libraryStatus.textContent = "0 saved scripts";
+      return;
+    }
+
+    this.libraryItems.forEach((item, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "library-item";
+      button.dataset.libraryIndex = String(index);
+
+      const copy = document.createElement("span");
+      copy.className = "library-item-copy";
+
+      const title = document.createElement("span");
+      title.className = "library-item-title";
+      title.textContent = item.title;
+
+      const fileName = document.createElement("span");
+      fileName.className = "library-item-file";
+      fileName.textContent = item.fileName;
+
+      const description = document.createElement("span");
+      description.className = "library-item-description";
+      description.textContent = item.description;
+
+      const preview = document.createElement("span");
+      preview.className = "library-item-preview";
+      preview.textContent = item.preview;
+
+      const meta = document.createElement("span");
+      meta.className = "library-item-meta";
+      meta.textContent = `${item.wordCount} ${item.wordCount === 1 ? "word" : "words"}`;
+
+      const action = document.createElement("span");
+      action.className = "library-item-action";
+      action.textContent = "Load";
+
+      copy.append(title, fileName, description, preview);
+      button.append(copy, meta, action);
+      this.elements.libraryList.append(button);
+    });
+
+    this.elements.libraryStatus.textContent = `${this.libraryItems.length} saved ${
+      this.libraryItems.length === 1 ? "script" : "scripts"
+    }`;
+  }
+
+  loadLibraryItem(item) {
+    this.elements.scriptInput.value = item.content;
+    this.setScriptSourceLabel(`Library: ${item.fileName}`);
+    this.updateScriptMetrics();
+    this.elements.validationMessage.textContent = `Loaded ${item.fileName}. You can edit it or press Load and Start.`;
+    this.elements.libraryStatus.textContent = `Loaded ${item.fileName} into the editor.`;
+    this.setScriptView("editor");
+    this.elements.scriptInput.focus();
   }
 
   updateWordsPerMinute(wordsPerMinute) {
