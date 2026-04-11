@@ -4,4 +4,4 @@ Currently, I’m working as a Tech Lead at Animal Badge Marketing, where I build
 
 Previously, I worked at iNeuron as a Computer Vision Engineer and Full Stack Data Scientist, where I built real-time face recognition and object detection systems that reduced operational costs by around 80%.
 
-I’ve also worked on GenAI-focused projects with organizations like NavGurukul and Bot Consulting. Overall, I enjoy building end-to-end AI systems that create real business impact.
+I’ve also worked on GenAI-focused projects with organizations like NavGurukul, OTS solutions and Bot Consulting. Overall, I enjoy building end-to-end AI systems that create real business impact.
