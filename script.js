@@ -26,6 +26,9 @@ const SETTING_LIMITS = {
   chunkSize: { min: 1, max: 3 },
 };
 
+const LIBRARY_API_PORT = 4173;
+const LIBRARY_REFRESH_INTERVAL_MS = 4000;
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -440,6 +443,9 @@ class PrompterApp {
     this.settings = loadSettings();
     this.libraryItems = [];
     this.activeScriptView = "editor";
+    this.libraryRequestId = 0;
+    this.libraryRefreshTimerId = null;
+    this.libraryEmptyMessage = "Loading saved scripts...";
     this.engine = new PrompterEngine((snapshot) => this.renderReader(snapshot));
 
     this.elements = {
@@ -488,7 +494,8 @@ class PrompterApp {
     this.bindEvents();
     this.applySettingsToUI();
     this.setScriptView(this.activeScriptView);
-    this.loadLibraryItems();
+    void this.loadLibraryItems();
+    this.startLibraryPolling();
     this.updateScriptMetrics();
     this.renderReader({
       chunk: null,
@@ -586,8 +593,29 @@ class PrompterApp {
       if (document.hidden && !this.elements.readerView.hidden && this.engine.isPlaying) {
         this.engine.pause();
       }
+
+      if (!document.hidden && this.activeScriptView === "library") {
+        void this.loadLibraryItems({ quiet: true });
+      }
     });
     window.addEventListener("resize", () => this.handleViewportChange());
+    window.addEventListener("focus", () => {
+      if (this.activeScriptView === "library") {
+        void this.loadLibraryItems({ quiet: true });
+      }
+    });
+  }
+
+  startLibraryPolling() {
+    if (this.libraryRefreshTimerId) {
+      return;
+    }
+
+    this.libraryRefreshTimerId = window.setInterval(() => {
+      if (this.activeScriptView === "library" && !document.hidden) {
+        void this.loadLibraryItems({ quiet: true });
+      }
+    }, LIBRARY_REFRESH_INTERVAL_MS);
   }
 
   setScriptSourceLabel(label) {
@@ -606,14 +634,46 @@ class PrompterApp {
     this.elements.scriptViewPanels.forEach((panel) => {
       panel.hidden = panel.dataset.scriptViewPanel !== this.activeScriptView;
     });
+
+    if (this.activeScriptView === "library") {
+      void this.loadLibraryItems({ quiet: false });
+    }
   }
 
-  loadLibraryItems() {
-    const rawLibraryItems = Array.isArray(window.PROMPTER_LIBRARY)
-      ? window.PROMPTER_LIBRARY
-      : [];
+  getLibraryApiUrls() {
+    if (window.location.protocol === "file:") {
+      return [
+        `http://127.0.0.1:${LIBRARY_API_PORT}/api/library`,
+        `http://localhost:${LIBRARY_API_PORT}/api/library`,
+      ];
+    }
 
-    this.libraryItems = rawLibraryItems
+    return [new URL("/api/library", window.location.href).toString()];
+  }
+
+  async fetchLibraryItemsFromApi() {
+    let lastError = null;
+
+    for (const apiUrl of this.getLibraryApiUrls()) {
+      try {
+        const response = await fetch(apiUrl, { cache: "no-store" });
+
+        if (!response.ok) {
+          throw new Error(`Library request failed with ${response.status}`);
+        }
+
+        const payload = await response.json();
+        return Array.isArray(payload) ? payload : [];
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError || new Error("Library request failed");
+  }
+
+  normalizeLibraryItems(rawLibraryItems) {
+    return rawLibraryItems
       .map((item, index) => {
         if (!item || typeof item.content !== "string") {
           return null;
@@ -646,19 +706,57 @@ class PrompterApp {
         };
       })
       .filter(Boolean);
-
-    this.renderLibraryItems();
   }
 
-  renderLibraryItems() {
+  async loadLibraryItems({ quiet = false } = {}) {
+    const requestId = ++this.libraryRequestId;
+
+    if (!quiet) {
+      this.elements.libraryStatus.textContent = "Loading saved scripts...";
+    }
+
+    try {
+      const rawLibraryItems = await this.fetchLibraryItemsFromApi();
+
+      if (requestId !== this.libraryRequestId) {
+        return;
+      }
+
+      this.libraryItems = this.normalizeLibraryItems(rawLibraryItems);
+      this.libraryEmptyMessage = "No .txt files found in library/.";
+      this.renderLibraryItems();
+    } catch {
+      if (requestId !== this.libraryRequestId) {
+        return;
+      }
+
+      const fallbackItems = this.normalizeLibraryItems(
+        Array.isArray(window.PROMPTER_LIBRARY) ? window.PROMPTER_LIBRARY : []
+      );
+
+      this.libraryItems = fallbackItems;
+      this.libraryEmptyMessage = fallbackItems.length
+        ? "Automatic folder sync is unavailable. Showing the last saved snapshot."
+        : "No saved scripts found. Start `node server.mjs` and add `.txt` files to library/.";
+      this.renderLibraryItems(
+        fallbackItems.length
+          ? `${fallbackItems.length} saved ${
+              fallbackItems.length === 1 ? "script" : "scripts"
+            } (snapshot)`
+          : "Automatic sync unavailable"
+      );
+    }
+  }
+
+  renderLibraryItems(statusLabel = "") {
     this.elements.libraryList.textContent = "";
 
     if (!this.libraryItems.length) {
       const emptyState = document.createElement("div");
       emptyState.className = "library-empty";
-      emptyState.textContent = "No saved scripts have been added yet.";
+      emptyState.textContent = this.libraryEmptyMessage;
       this.elements.libraryList.append(emptyState);
-      this.elements.libraryStatus.textContent = "0 saved scripts";
+      this.elements.libraryStatus.textContent = statusLabel || "0 saved scripts";
       return;
     }
 
@@ -700,9 +798,11 @@ class PrompterApp {
       this.elements.libraryList.append(button);
     });
 
-    this.elements.libraryStatus.textContent = `${this.libraryItems.length} saved ${
-      this.libraryItems.length === 1 ? "script" : "scripts"
-    }`;
+    this.elements.libraryStatus.textContent =
+      statusLabel ||
+      `${this.libraryItems.length} saved ${
+        this.libraryItems.length === 1 ? "script" : "scripts"
+      }`;
   }
 
   loadLibraryItem(item) {
