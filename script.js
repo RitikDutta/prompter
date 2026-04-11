@@ -608,7 +608,7 @@ class PrompterApp {
     this.elements.startButton.addEventListener("click", () => this.startReading());
     this.elements.playButton.addEventListener("click", () => this.engine.play());
     this.elements.pauseButton.addEventListener("click", () => this.engine.pause());
-    this.elements.restartButton.addEventListener("click", () => this.engine.restart());
+    this.elements.restartButton.addEventListener("click", () => this.handleRestartRequest());
     this.elements.previousButton.addEventListener("click", () => this.engine.previous());
     this.elements.nextButton.addEventListener("click", () => this.engine.next());
     this.elements.backButton.addEventListener("click", () => this.exitReadingMode());
@@ -1221,6 +1221,20 @@ class PrompterApp {
         .then(() => document.exitFullscreen())
         .catch(() => {});
     }
+  }
+
+  handleRestartRequest() {
+    if (!this.engine.hasScript()) {
+      return;
+    }
+
+    const shouldRestart = window.confirm("Restart from the beginning?");
+
+    if (!shouldRestart) {
+      return;
+    }
+
+    this.engine.restart();
   }
 
   renderReader(snapshot) {
