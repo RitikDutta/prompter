@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const LIBRARY_DIR = "library";
+const LIBRARY_EXTENSIONS = new Set([".txt", ".md", ".json"]);
 
 function formatTitle(fileName) {
   return fileName
@@ -15,24 +16,54 @@ async function main() {
   await mkdir(libraryPath, { recursive: true });
 
   const directoryEntries = await readdir(libraryPath, { withFileTypes: true });
-  const textFiles = directoryEntries
-    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".txt"))
+  const libraryFiles = directoryEntries
+    .filter((entry) => {
+      if (!entry.isFile()) {
+        return false;
+      }
+
+      return LIBRARY_EXTENSIONS.has(path.extname(entry.name).toLowerCase());
+    })
     .map((entry) => entry.name)
     .sort((left, right) => left.localeCompare(right));
 
   const libraryEntries = [];
 
-  for (const fileName of textFiles) {
+  for (const fileName of libraryFiles) {
+    const extension = path.extname(fileName).toLowerCase();
     const content = await readFile(path.join(libraryPath, fileName), "utf8");
 
     if (!content.trim()) {
       continue;
     }
 
+    if (extension === ".json") {
+      const parsed = JSON.parse(content);
+
+      if (!parsed || typeof parsed.content !== "string" || !parsed.content.trim()) {
+        continue;
+      }
+
+      libraryEntries.push({
+        title:
+          typeof parsed.title === "string" && parsed.title.trim()
+            ? parsed.title.trim()
+            : formatTitle(fileName),
+        fileName,
+        description:
+          typeof parsed.description === "string" && parsed.description.trim()
+            ? parsed.description.trim()
+            : `Saved script from ${fileName}`,
+        content: parsed.content,
+      });
+      continue;
+    }
+
     libraryEntries.push({
       title: formatTitle(fileName),
       fileName,
-      description: `Saved script from ${fileName}`,
+      description:
+        extension === ".md" ? `Saved markdown script from ${fileName}` : `Saved script from ${fileName}`,
       content,
     });
   }

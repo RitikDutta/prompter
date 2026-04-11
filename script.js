@@ -690,6 +690,30 @@ class PrompterApp {
     ];
   }
 
+  getCurrentLibraryApiUrl() {
+    return new URL("./api/library", window.location.href).toString();
+  }
+
+  hasEmbeddedLibrarySnapshot() {
+    return Array.isArray(window.PROMPTER_LIBRARY);
+  }
+
+  getEmbeddedLibrarySnapshot() {
+    return this.hasEmbeddedLibrarySnapshot() ? window.PROMPTER_LIBRARY : [];
+  }
+
+  isLocalDevelopmentHost() {
+    return ["127.0.0.1", "localhost"].includes(window.location.hostname);
+  }
+
+  shouldPreferEmbeddedLibrarySnapshot() {
+    return (
+      this.hasEmbeddedLibrarySnapshot() &&
+      window.location.protocol !== "file:" &&
+      !this.isLocalDevelopmentHost()
+    );
+  }
+
   async fetchLibraryItemsFromApiUrls(apiUrls) {
     let lastError = null;
 
@@ -784,20 +808,26 @@ class PrompterApp {
       return this.fetchLibraryItemsFromApiUrls(this.getDedicatedLibraryApiUrls());
     }
 
+    const currentLibraryApiUrl = this.getCurrentLibraryApiUrl();
+
     if (window.location.port === String(LIBRARY_API_PORT)) {
-      return this.fetchLibraryItemsFromApiUrls([
-        new URL("/api/library", window.location.href).toString(),
-      ]);
+      return this.fetchLibraryItemsFromApiUrls([currentLibraryApiUrl]);
+    }
+
+    if (this.shouldPreferEmbeddedLibrarySnapshot()) {
+      return this.getEmbeddedLibrarySnapshot();
     }
 
     try {
       return await this.fetchLibraryItemsFromDirectory();
     } catch (directoryError) {
       try {
-        return await this.fetchLibraryItemsFromApiUrls([
-          new URL("/api/library", window.location.href).toString(),
-        ]);
+        return await this.fetchLibraryItemsFromApiUrls([currentLibraryApiUrl]);
       } catch {
+        if (this.hasEmbeddedLibrarySnapshot()) {
+          return this.getEmbeddedLibrarySnapshot();
+        }
+
         throw directoryError;
       }
     }
