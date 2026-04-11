@@ -10,11 +10,12 @@
  */
 
 const STORAGE_KEY = "center-word-prompter-settings";
+const STORAGE_VERSION = 2;
 
 const DEFAULT_SETTINGS = {
   wordsPerMinute: 170,
   fontSize: 76,
-  verticalOffset: 0,
+  verticalOffset: -2400,
   chunkSize: 2,
   theme: "dark",
 };
@@ -86,28 +87,38 @@ function isSupportedLibraryFile(fileName) {
   return LIBRARY_FILE_EXTENSIONS.has(extension);
 }
 
+function parseSettingNumber(rawValue, fallback) {
+  const parsedValue = Number(rawValue);
+  return Number.isFinite(parsedValue) ? parsedValue : fallback;
+}
+
 function loadSettings() {
   try {
     const savedSettings = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    const shouldMigrateLegacyPosition =
+      savedSettings.version == null && Number(savedSettings.verticalOffset) === 0;
+    const savedVerticalOffset = shouldMigrateLegacyPosition
+      ? DEFAULT_SETTINGS.verticalOffset
+      : savedSettings.verticalOffset;
 
     return {
       wordsPerMinute: clamp(
-        Number(savedSettings.wordsPerMinute) || DEFAULT_SETTINGS.wordsPerMinute,
+        parseSettingNumber(savedSettings.wordsPerMinute, DEFAULT_SETTINGS.wordsPerMinute),
         SETTING_LIMITS.wordsPerMinute.min,
         SETTING_LIMITS.wordsPerMinute.max
       ),
       fontSize: clamp(
-        Number(savedSettings.fontSize) || DEFAULT_SETTINGS.fontSize,
+        parseSettingNumber(savedSettings.fontSize, DEFAULT_SETTINGS.fontSize),
         SETTING_LIMITS.fontSize.min,
         SETTING_LIMITS.fontSize.max
       ),
       verticalOffset: clamp(
-        Number(savedSettings.verticalOffset) || DEFAULT_SETTINGS.verticalOffset,
+        parseSettingNumber(savedVerticalOffset, DEFAULT_SETTINGS.verticalOffset),
         SETTING_LIMITS.verticalOffset.min,
         SETTING_LIMITS.verticalOffset.max
       ),
       chunkSize: clamp(
-        Number(savedSettings.chunkSize) || DEFAULT_SETTINGS.chunkSize,
+        parseSettingNumber(savedSettings.chunkSize, DEFAULT_SETTINGS.chunkSize),
         SETTING_LIMITS.chunkSize.min,
         SETTING_LIMITS.chunkSize.max
       ),
@@ -120,7 +131,13 @@ function loadSettings() {
 
 function saveSettings(settings) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        ...settings,
+        version: STORAGE_VERSION,
+      })
+    );
   } catch {
     // Ignore storage failures so the app still works in restricted contexts.
   }
@@ -484,6 +501,8 @@ class PrompterApp {
       nextButton: document.getElementById("nextButton"),
       backButton: document.getElementById("backButton"),
       fullscreenButton: document.getElementById("fullscreenButton"),
+      readerHud: document.querySelector(".reader-hud"),
+      readerDock: document.querySelector(".reader-dock"),
       readerSpeedValue: document.getElementById("readerSpeedValue"),
       readerFontValue: document.getElementById("readerFontValue"),
       readerPositionValue: document.getElementById("readerPositionValue"),
@@ -965,12 +984,42 @@ class PrompterApp {
   updateVerticalOffset(verticalOffset) {
     const bounds = this.getVerticalOffsetBounds();
     this.settings.verticalOffset = clamp(
-      Number(verticalOffset) || DEFAULT_SETTINGS.verticalOffset,
+      parseSettingNumber(verticalOffset, DEFAULT_SETTINGS.verticalOffset),
       bounds.min,
       bounds.max
     );
     this.applySettingsToUI();
     saveSettings(this.settings);
+  }
+
+  getEstimatedChunkHeight() {
+    if (!this.elements.readerView.hidden) {
+      const measuredHeight = this.elements.chunkDisplay.getBoundingClientRect().height;
+
+      if (measuredHeight > 0) {
+        return measuredHeight;
+      }
+    }
+
+    return Math.max(this.settings.fontSize * 2.2, this.settings.fontSize * 1.08 + 24);
+  }
+
+  getReaderSafeInsets(viewportHeight) {
+    const topEdgeGuard = Math.max(6, Math.round(this.settings.fontSize * 0.04));
+
+    if (this.elements.readerView.hidden) {
+      return {
+        top: topEdgeGuard,
+        bottom: Math.max(172, this.settings.fontSize * 1.7),
+      };
+    }
+
+    const dockRect = this.elements.readerDock?.getBoundingClientRect();
+
+    return {
+      top: topEdgeGuard,
+      bottom: Math.max(28, viewportHeight - (dockRect?.top || viewportHeight) + 16),
+    };
   }
 
   updateChunkSize(chunkSize) {
@@ -992,34 +1041,21 @@ class PrompterApp {
   }
 
   applySettingsToUI() {
-    const verticalOffsetBounds = this.syncVerticalOffsetBounds();
+    this.updateVerticalOffsetUI();
 
     this.elements.body.dataset.theme = this.settings.theme;
     document.documentElement.style.setProperty(
       "--reader-font-size",
       `${this.settings.fontSize}px`
     );
-    document.documentElement.style.setProperty(
-      "--reader-offset-y",
-      `${this.settings.verticalOffset}px`
-    );
 
     this.elements.speedInput.value = String(this.settings.wordsPerMinute);
     this.elements.fontSizeInput.value = String(this.settings.fontSize);
-    this.elements.positionInput.value = String(this.settings.verticalOffset);
 
     this.elements.speedValue.textContent = `${this.settings.wordsPerMinute} WPM`;
     this.elements.readerSpeedValue.textContent = `${this.settings.wordsPerMinute} WPM`;
     this.elements.fontSizeValue.textContent = `${this.settings.fontSize} px`;
     this.elements.readerFontValue.textContent = `${this.settings.fontSize} px`;
-    this.elements.positionValue.textContent = formatVerticalOffset(
-      this.settings.verticalOffset,
-      verticalOffsetBounds
-    );
-    this.elements.readerPositionValue.textContent = formatVerticalOffset(
-      this.settings.verticalOffset,
-      verticalOffsetBounds
-    );
     this.elements.chunkSizeValue.textContent = `${this.settings.chunkSize} ${
       this.settings.chunkSize === 1 ? "word" : "words"
     }`;
@@ -1040,31 +1076,47 @@ class PrompterApp {
   getVerticalOffsetBounds() {
     const viewportHeight =
       window.innerHeight || document.documentElement.clientHeight || 0;
-    const estimatedHalfTextHeight = Math.max(10, this.settings.fontSize * 0.58);
-    const availableTravel = Math.max(
-      0,
-      viewportHeight / 2 - estimatedHalfTextHeight
-    );
-    const snappedTravel = Math.floor(availableTravel / 4) * 4;
+    const halfTextHeight = this.getEstimatedChunkHeight() / 2;
+    const safeInsets = this.getReaderSafeInsets(viewportHeight);
+    const minCenterY = safeInsets.top + halfTextHeight;
+    const maxCenterY = viewportHeight - safeInsets.bottom - halfTextHeight;
+    const rawMinOffset = Math.min(0, minCenterY - viewportHeight / 2);
+    const rawMaxOffset = Math.max(0, maxCenterY - viewportHeight / 2);
 
     return {
-      min: -snappedTravel,
-      max: snappedTravel,
+      min: Math.ceil(rawMinOffset / 4) * 4,
+      max: Math.floor(rawMaxOffset / 4) * 4,
     };
   }
 
   syncVerticalOffsetBounds() {
     const bounds = this.getVerticalOffsetBounds();
-
-    this.settings.verticalOffset = clamp(
-      this.settings.verticalOffset,
-      bounds.min,
-      bounds.max
-    );
     this.elements.positionInput.min = String(bounds.min);
     this.elements.positionInput.max = String(bounds.max);
 
     return bounds;
+  }
+
+  updateVerticalOffsetUI() {
+    const bounds = this.syncVerticalOffsetBounds();
+    const effectiveOffset = clamp(this.settings.verticalOffset, bounds.min, bounds.max);
+
+    document.documentElement.style.setProperty(
+      "--reader-offset-y",
+      `${effectiveOffset}px`
+    );
+
+    this.elements.positionInput.value = String(effectiveOffset);
+    this.elements.positionValue.textContent = formatVerticalOffset(
+      effectiveOffset,
+      bounds
+    );
+    this.elements.readerPositionValue.textContent = formatVerticalOffset(
+      effectiveOffset,
+      bounds
+    );
+
+    return { bounds, effectiveOffset };
   }
 
   handleViewportChange() {
@@ -1126,6 +1178,7 @@ class PrompterApp {
 
     this.elements.readerView.hidden = false;
     this.elements.body.classList.add("reader-active");
+    this.updateVerticalOffsetUI();
   }
 
   exitReadingMode() {
@@ -1149,6 +1202,8 @@ class PrompterApp {
       void this.elements.chunkDisplay.offsetWidth;
       this.elements.chunkDisplay.classList.add("is-swapping");
     }
+
+    this.updateVerticalOffsetUI();
 
     this.elements.progressLabel.textContent = `${snapshot.displayIndex} / ${snapshot.totalChunks}`;
     this.elements.progressPercent.textContent = `${Math.round(snapshot.progressPercent)}%`;
