@@ -709,7 +709,7 @@ class PrompterApp {
     this.elements.scriptInput.value = item.content;
     this.setScriptSourceLabel(`Library: ${item.fileName}`);
     this.updateScriptMetrics();
-    this.elements.validationMessage.textContent = `Loaded ${item.fileName}. You can edit it or press Load and Start.`;
+    this.elements.validationMessage.textContent = `Loaded ${item.fileName}. You can edit it or press Load Script.`;
     this.elements.libraryStatus.textContent = `Loaded ${item.fileName} into the editor.`;
     this.setScriptView("editor");
     this.elements.scriptInput.focus();
@@ -866,7 +866,7 @@ class PrompterApp {
     this.elements.startButton.disabled = !hasScript;
 
     if (!hasScript) {
-      this.elements.validationMessage.textContent = "Paste a script to enable reading mode.";
+      this.elements.validationMessage.textContent = "Paste a script to load it into reading mode.";
     } else {
       this.clearValidationMessage();
     }
@@ -875,7 +875,7 @@ class PrompterApp {
   clearValidationMessage() {
     if (ScriptParser.tokenize(this.elements.scriptInput.value).length > 0) {
       this.elements.validationMessage.textContent =
-        "Small centered chunks help keep your eyes closer to the camera lens.";
+        "Load the reader first, then press Play when you are ready.";
     }
   }
 
@@ -884,7 +884,7 @@ class PrompterApp {
     const tokens = ScriptParser.tokenize(scriptText);
 
     if (!tokens.length) {
-      this.elements.validationMessage.textContent = "Paste a script before starting reading mode.";
+      this.elements.validationMessage.textContent = "Paste a script before loading the reader.";
       this.elements.scriptInput.focus();
       return;
     }
@@ -901,7 +901,6 @@ class PrompterApp {
 
     this.elements.readerView.hidden = false;
     this.elements.body.classList.add("reader-active");
-    this.engine.play();
   }
 
   exitReadingMode() {

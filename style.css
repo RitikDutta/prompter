@@ -519,10 +519,6 @@ textarea:focus-visible {
   transform: none;
 }
 
-.action-block {
-  margin-top: auto;
-}
-
 .action-block .primary-button {
   width: 100%;
 }
