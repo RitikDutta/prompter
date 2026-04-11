@@ -1,0 +1,21 @@
+“Let me explain my project, Interview Mentor.
+
+At a high level, it’s an AI-driven mock interview platform where the AI acts as the interviewer and the user is the candidate. But the real strength of the project lies in the backend architecture and how the system adapts dynamically.
+
+Instead of building it as a simple chatbot, I designed it as a main orchestration agent supported by specialized sub-agents.
+
+The main agent controls the interview flow — like what should happen next — but it does not execute tasks itself. It delegates them to sub-agents. And the key idea is that the main agent is not aware of how these tasks are implemented internally — it only consumes their outputs.
+
+For example, there’s a profile agent that maintains user data like skills, strengths, weaknesses, and past performance. Then there’s a strategy and retrieval agent, which analyzes this profile and decides what kind of question should be asked next, and fetches it using semantic search. And there’s an evaluation agent, which scores the user’s answer across dimensions like technical accuracy, reasoning depth, and communication clarity.
+
+After evaluation, the scores are updated using a smoothed mechanism like exponential moving average, so the system builds a stable understanding of the user instead of reacting to single answers.
+
+Based on this updated profile, the system dynamically adjusts the interview — increasing difficulty if the user is doing well, or focusing on weaknesses if needed.
+
+There’s also a resume ETL pipeline, where the system extracts structured information from the user’s resume and uses it to initialize the profile.
+
+So overall, the system continuously learns from both resume data and live performance.
+
+From an architecture standpoint, this design gives strong modularity, scalability, and abstraction, because each agent is independent and replaceable, while the main agent stays focused only on orchestration.
+
+So this is not just an AI interviewer — it’s a multi-agent adaptive interview system that personalizes itself in real time based on the user.”

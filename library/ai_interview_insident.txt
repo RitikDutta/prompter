@@ -1,0 +1,25 @@
+“Actually, I want to share a small real incident that influenced how I designed this system.
+
+I once gave an AI-based interview where, during one question, I didn’t hear it properly. So I said something like, ‘Can you repeat the question?’
+
+But what happened was — the system treated that input as my final answer and directly evaluated it.
+
+So instead of understanding the intent, it blindly followed the pipeline: user input → evaluation → score.
+
+That’s when I realized that the system was not actually making decisions — it was just executing steps. There was no understanding of what the user is trying to do.
+
+In my project, I handled this differently.
+
+Instead of a fixed pipeline, I introduced a main orchestration agent that makes decisions before moving to the next step.
+
+So now, when a user responds, the system doesn’t immediately send it for evaluation. First, it interprets the intent — whether the user is answering, asking for clarification, skipping, or requesting help.
+
+Only if it detects a valid answer does it forward it to the evaluation agent. Otherwise, it handles it appropriately — like repeating the question.
+
+So the key difference is:
+
+That system was execution-driven, mine is decision-driven.
+
+Mine has an intelligence layer before every action, whereas that system was just following a fixed workflow.
+
+This small issue actually helped me design a more robust and human-like interaction system.”
