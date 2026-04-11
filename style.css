@@ -303,6 +303,14 @@ textarea:focus-visible {
   gap: 1rem;
 }
 
+.library-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 .library-title-heading {
   margin: 0;
   font-size: 1.08rem;
@@ -312,6 +320,10 @@ textarea:focus-visible {
   margin: 0;
   color: var(--text-secondary);
   font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+.library-refresh-button {
   white-space: nowrap;
 }
 
@@ -733,6 +745,7 @@ textarea:focus-visible {
   .panel-heading,
   .field-row,
   .library-header,
+  .library-tools,
   .reader-dock-row,
   .reader-hud {
     flex-direction: column;

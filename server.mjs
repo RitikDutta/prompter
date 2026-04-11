@@ -8,6 +8,7 @@ const HOST = "127.0.0.1";
 const PORT = Number(process.env.PORT) || 4173;
 const ROOT_DIR = process.cwd();
 const LIBRARY_DIR = path.join(ROOT_DIR, "library");
+const LIBRARY_EXTENSIONS = new Set([".txt", ".md", ".json"]);
 
 const CONTENT_TYPES = {
   ".css": "text/css; charset=utf-8",
@@ -47,24 +48,55 @@ export async function readLibraryItems() {
   await mkdir(LIBRARY_DIR, { recursive: true });
 
   const entries = await readdir(LIBRARY_DIR, { withFileTypes: true });
-  const textFiles = entries
-    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".txt"))
+  const libraryFiles = entries
+    .filter((entry) => {
+      if (!entry.isFile()) {
+        return false;
+      }
+
+      return LIBRARY_EXTENSIONS.has(path.extname(entry.name).toLowerCase());
+    })
     .map((entry) => entry.name)
     .sort((left, right) => left.localeCompare(right));
 
   const items = [];
 
-  for (const fileName of textFiles) {
-    const content = await readFile(path.join(LIBRARY_DIR, fileName), "utf8");
+  for (const fileName of libraryFiles) {
+    const filePath = path.join(LIBRARY_DIR, fileName);
+    const extension = path.extname(fileName).toLowerCase();
+    const content = await readFile(filePath, "utf8");
 
     if (!content.trim()) {
+      continue;
+    }
+
+    if (extension === ".json") {
+      const parsed = JSON.parse(content);
+
+      if (!parsed || typeof parsed.content !== "string" || !parsed.content.trim()) {
+        continue;
+      }
+
+      items.push({
+        title:
+          typeof parsed.title === "string" && parsed.title.trim()
+            ? parsed.title.trim()
+            : formatTitle(fileName),
+        fileName,
+        description:
+          typeof parsed.description === "string" && parsed.description.trim()
+            ? parsed.description.trim()
+            : `Saved script from ${fileName}`,
+        content: parsed.content,
+      });
       continue;
     }
 
     items.push({
       title: formatTitle(fileName),
       fileName,
-      description: `Saved script from ${fileName}`,
+      description:
+        extension === ".md" ? `Saved markdown script from ${fileName}` : `Saved script from ${fileName}`,
       content,
     });
   }

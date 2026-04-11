@@ -28,6 +28,7 @@ const SETTING_LIMITS = {
 
 const LIBRARY_API_PORT = 4173;
 const LIBRARY_REFRESH_INTERVAL_MS = 4000;
+const LIBRARY_FILE_EXTENSIONS = new Set([".txt", ".md", ".json"]);
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -78,6 +79,11 @@ function buildLibraryPreview(text, maxLength = 160) {
   }
 
   return `${normalizedText.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function isSupportedLibraryFile(fileName) {
+  const extension = `.${String(fileName).split(".").pop()?.toLowerCase() || ""}`;
+  return LIBRARY_FILE_EXTENSIONS.has(extension);
 }
 
 function loadSettings() {
@@ -446,6 +452,7 @@ class PrompterApp {
     this.libraryRequestId = 0;
     this.libraryRefreshTimerId = null;
     this.libraryEmptyMessage = "Loading saved scripts...";
+    this.isLibraryLoading = false;
     this.engine = new PrompterEngine((snapshot) => this.renderReader(snapshot));
 
     this.elements = {
@@ -482,6 +489,7 @@ class PrompterApp {
       readerPositionValue: document.getElementById("readerPositionValue"),
       libraryList: document.getElementById("libraryList"),
       libraryStatus: document.getElementById("libraryStatus"),
+      libraryRefreshButton: document.getElementById("libraryRefreshButton"),
       themeToggles: [...document.querySelectorAll("[data-theme-toggle]")],
       scriptViewButtons: [...document.querySelectorAll("[data-script-view]")],
       scriptViewPanels: [...document.querySelectorAll("[data-script-view-panel]")],
@@ -534,6 +542,10 @@ class PrompterApp {
       if (libraryItem) {
         this.loadLibraryItem(libraryItem);
       }
+    });
+
+    this.elements.libraryRefreshButton.addEventListener("click", () => {
+      void this.loadLibraryItems({ quiet: false, manual: true });
     });
 
     this.elements.speedInput.addEventListener("input", (event) => {
@@ -622,6 +634,18 @@ class PrompterApp {
     this.elements.scriptSourceLabel.textContent = label;
   }
 
+  setLibraryLoading(isLoading, statusText = "") {
+    this.isLibraryLoading = isLoading;
+    this.elements.libraryRefreshButton.disabled = isLoading;
+    this.elements.libraryRefreshButton.textContent = isLoading
+      ? "Refreshing..."
+      : "Refresh Library";
+
+    if (statusText) {
+      this.elements.libraryStatus.textContent = statusText;
+    }
+  }
+
   setScriptView(viewName) {
     this.activeScriptView = viewName === "library" ? "library" : "editor";
 
@@ -640,21 +664,17 @@ class PrompterApp {
     }
   }
 
-  getLibraryApiUrls() {
-    if (window.location.protocol === "file:") {
-      return [
-        `http://127.0.0.1:${LIBRARY_API_PORT}/api/library`,
-        `http://localhost:${LIBRARY_API_PORT}/api/library`,
-      ];
-    }
-
-    return [new URL("/api/library", window.location.href).toString()];
+  getDedicatedLibraryApiUrls() {
+    return [
+      `http://127.0.0.1:${LIBRARY_API_PORT}/api/library`,
+      `http://localhost:${LIBRARY_API_PORT}/api/library`,
+    ];
   }
 
-  async fetchLibraryItemsFromApi() {
+  async fetchLibraryItemsFromApiUrls(apiUrls) {
     let lastError = null;
 
-    for (const apiUrl of this.getLibraryApiUrls()) {
+    for (const apiUrl of apiUrls) {
       try {
         const response = await fetch(apiUrl, { cache: "no-store" });
 
@@ -670,6 +690,98 @@ class PrompterApp {
     }
 
     throw lastError || new Error("Library request failed");
+  }
+
+  async fetchLibraryItemsFromDirectory() {
+    const directoryUrl = new URL("./library/", window.location.href).toString();
+    const directoryResponse = await fetch(directoryUrl, { cache: "no-store" });
+
+    if (!directoryResponse.ok) {
+      throw new Error(`Library directory request failed with ${directoryResponse.status}`);
+    }
+
+    const directoryMarkup = await directoryResponse.text();
+    const documentParser = new DOMParser().parseFromString(directoryMarkup, "text/html");
+    const libraryPathname = new URL(directoryUrl).pathname;
+
+    const fileUrls = [...documentParser.querySelectorAll("a[href]")]
+      .map((link) => new URL(link.getAttribute("href"), directoryUrl))
+      .filter((fileUrl) => {
+        const fileName = decodeURIComponent(fileUrl.pathname.split("/").pop() || "");
+
+        return (
+          fileUrl.pathname.startsWith(libraryPathname) &&
+          fileName &&
+          isSupportedLibraryFile(fileName)
+        );
+      })
+      .map((fileUrl) => fileUrl.toString());
+
+    const uniqueFileUrls = [...new Set(fileUrls)];
+    const libraryItems = [];
+
+    for (const fileUrl of uniqueFileUrls) {
+      const fileResponse = await fetch(fileUrl, { cache: "no-store" });
+
+      if (!fileResponse.ok) {
+        continue;
+      }
+
+      const fileName = decodeURIComponent(new URL(fileUrl).pathname.split("/").pop() || "");
+      const fileContents = await fileResponse.text();
+
+      if (!fileContents.trim()) {
+        continue;
+      }
+
+      if (fileName.toLowerCase().endsWith(".json")) {
+        try {
+          const parsedItem = JSON.parse(fileContents);
+
+          libraryItems.push({
+            title: parsedItem.title,
+            fileName,
+            description: parsedItem.description,
+            content: parsedItem.content,
+          });
+        } catch {
+          // Ignore malformed JSON entries and keep loading the rest.
+        }
+
+        continue;
+      }
+
+      libraryItems.push({
+        fileName,
+        content: fileContents,
+      });
+    }
+
+    return libraryItems;
+  }
+
+  async fetchLibraryItemsFromSource() {
+    if (window.location.protocol === "file:") {
+      return this.fetchLibraryItemsFromApiUrls(this.getDedicatedLibraryApiUrls());
+    }
+
+    if (window.location.port === String(LIBRARY_API_PORT)) {
+      return this.fetchLibraryItemsFromApiUrls([
+        new URL("/api/library", window.location.href).toString(),
+      ]);
+    }
+
+    try {
+      return await this.fetchLibraryItemsFromDirectory();
+    } catch (directoryError) {
+      try {
+        return await this.fetchLibraryItemsFromApiUrls([
+          new URL("/api/library", window.location.href).toString(),
+        ]);
+      } catch {
+        throw directoryError;
+      }
+    }
   }
 
   normalizeLibraryItems(rawLibraryItems) {
@@ -708,15 +820,18 @@ class PrompterApp {
       .filter(Boolean);
   }
 
-  async loadLibraryItems({ quiet = false } = {}) {
+  async loadLibraryItems({ quiet = false, manual = false } = {}) {
     const requestId = ++this.libraryRequestId;
 
     if (!quiet) {
-      this.elements.libraryStatus.textContent = "Loading saved scripts...";
+      this.setLibraryLoading(
+        true,
+        manual ? "Refreshing saved scripts..." : "Loading saved scripts..."
+      );
     }
 
     try {
-      const rawLibraryItems = await this.fetchLibraryItemsFromApi();
+      const rawLibraryItems = await this.fetchLibraryItemsFromSource();
 
       if (requestId !== this.libraryRequestId) {
         return;
@@ -725,6 +840,7 @@ class PrompterApp {
       this.libraryItems = this.normalizeLibraryItems(rawLibraryItems);
       this.libraryEmptyMessage = "No .txt files found in library/.";
       this.renderLibraryItems();
+      this.setLibraryLoading(false);
     } catch {
       if (requestId !== this.libraryRequestId) {
         return;
@@ -733,17 +849,26 @@ class PrompterApp {
       const fallbackItems = this.normalizeLibraryItems(
         Array.isArray(window.PROMPTER_LIBRARY) ? window.PROMPTER_LIBRARY : []
       );
+      const hasSnapshot = fallbackItems.length > 0;
 
       this.libraryItems = fallbackItems;
-      this.libraryEmptyMessage = fallbackItems.length
-        ? "Automatic folder sync is unavailable. Showing the last saved snapshot."
-        : "No saved scripts found. Start `node server.mjs` and add `.txt` files to library/.";
+      this.libraryEmptyMessage = hasSnapshot
+        ? "Live refresh is unavailable. Run `node server.mjs`, then click Refresh Library again."
+        : "No saved scripts found. Run `node server.mjs` and add `.md`, `.txt`, or `.json` files to library/.";
       this.renderLibraryItems(
-        fallbackItems.length
+        hasSnapshot
           ? `${fallbackItems.length} saved ${
               fallbackItems.length === 1 ? "script" : "scripts"
             } (snapshot)`
-          : "Automatic sync unavailable"
+          : "Library server unavailable"
+      );
+      this.setLibraryLoading(
+        false,
+        manual
+          ? hasSnapshot
+            ? "Refresh failed. Showing saved snapshot."
+            : "Refresh failed. Start node server.mjs."
+          : ""
       );
     }
   }

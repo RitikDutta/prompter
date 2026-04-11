@@ -82,16 +82,25 @@
                 <p class="section-kicker">Saved scripts</p>
                 <h3 class="library-title-heading">Choose a text file to load</h3>
               </div>
-              <p class="library-status" id="libraryStatus" aria-live="polite">
-                0 saved scripts
-              </p>
+              <div class="library-tools">
+                <p class="library-status" id="libraryStatus" aria-live="polite">
+                  0 saved scripts
+                </p>
+                <button
+                  class="ghost-button library-refresh-button"
+                  id="libraryRefreshButton"
+                  type="button"
+                >
+                  Refresh Library
+                </button>
+              </div>
             </div>
 
             <div class="library-list" id="libraryList" role="list"></div>
 
             <p class="helper-text">
-              Run `node server.mjs`, then any non-empty `.txt` file added to
-              `library/` will appear here automatically.
+              Click Refresh Library after adding files. The `library/` folder can
+              contain `.md`, `.txt`, or `.json` script files.
             </p>
           </div>
         </section>
