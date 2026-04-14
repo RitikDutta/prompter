@@ -75,6 +75,22 @@ function formatLibraryTitle(fileName) {
     .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
+function getLibraryItemAccentClass(item) {
+  const candidateNames = [item?.fileName, item?.title]
+    .filter((value) => typeof value === "string")
+    .map((value) => value.trim().toLowerCase());
+
+  if (candidateNames.some((value) => value.startsWith("ir "))) {
+    return "library-item--ir";
+  }
+
+  if (candidateNames.some((value) => value.startsWith("edt"))) {
+    return "library-item--edt";
+  }
+
+  return "";
+}
+
 function buildLibraryPreview(text, maxLength = 160) {
   const normalizedText = ScriptParser.normalize(text || "");
 
@@ -1072,6 +1088,12 @@ class PrompterApp {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "library-item";
+      const accentClassName = getLibraryItemAccentClass(item);
+
+      if (accentClassName) {
+        button.classList.add(accentClassName);
+      }
+
       button.dataset.libraryIndex = String(index);
 
       const copy = document.createElement("span");
