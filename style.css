@@ -357,6 +357,26 @@ textarea:focus-visible {
   transform: translateY(-1px);
 }
 
+.library-item--ir {
+  background: rgba(98, 176, 118, 0.12);
+  border-color: rgba(98, 176, 118, 0.22);
+}
+
+.library-item--ir:hover {
+  background: rgba(98, 176, 118, 0.18);
+  border-color: rgba(98, 176, 118, 0.3);
+}
+
+.library-item--edt {
+  background: rgba(214, 101, 101, 0.1);
+  border-color: rgba(214, 101, 101, 0.2);
+}
+
+.library-item--edt:hover {
+  background: rgba(214, 101, 101, 0.16);
+  border-color: rgba(214, 101, 101, 0.28);
+}
+
 .library-item-copy {
   display: grid;
   gap: 0.28rem;
