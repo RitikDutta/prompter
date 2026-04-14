@@ -11,6 +11,9 @@
 
 const STORAGE_KEY = "center-word-prompter-settings";
 const STORAGE_VERSION = 2;
+const GITHUB_API_ORIGIN = "https://api.github.com";
+const GITHUB_PAGES_HOST_SUFFIX = ".github.io";
+const LIBRARY_DIRECTORY_NAME = "library";
 
 const DEFAULT_SETTINGS = {
   wordsPerMinute: 170,
@@ -638,7 +641,7 @@ class PrompterApp {
   }
 
   startLibraryPolling() {
-    if (this.libraryRefreshTimerId) {
+    if (this.libraryRefreshTimerId || !this.shouldPollLibraryContinuously()) {
       return;
     }
 
@@ -647,6 +650,14 @@ class PrompterApp {
         void this.loadLibraryItems({ quiet: true });
       }
     }, LIBRARY_REFRESH_INTERVAL_MS);
+  }
+
+  shouldPollLibraryContinuously() {
+    if (window.location.protocol === "file:") {
+      return true;
+    }
+
+    return this.isLocalDevelopmentHost() || window.location.port === String(LIBRARY_API_PORT);
   }
 
   setScriptSourceLabel(label) {
@@ -694,6 +705,29 @@ class PrompterApp {
     return new URL("./api/library", window.location.href).toString();
   }
 
+  isGitHubPagesHost() {
+    return window.location.hostname.endsWith(GITHUB_PAGES_HOST_SUFFIX);
+  }
+
+  getGitHubPagesRepositoryContext() {
+    if (!this.isGitHubPagesHost()) {
+      return null;
+    }
+
+    const owner = window.location.hostname.replace(GITHUB_PAGES_HOST_SUFFIX, "");
+    const pathSegments = window.location.pathname.split("/").filter(Boolean);
+    const firstSegment = pathSegments[0] || "";
+    const repo = firstSegment && !firstSegment.includes(".")
+      ? firstSegment
+      : `${owner}${GITHUB_PAGES_HOST_SUFFIX}`;
+
+    if (!owner || !repo) {
+      return null;
+    }
+
+    return { owner, repo };
+  }
+
   hasEmbeddedLibrarySnapshot() {
     return Array.isArray(window.PROMPTER_LIBRARY);
   }
@@ -736,7 +770,7 @@ class PrompterApp {
   }
 
   async fetchLibraryItemsFromDirectory() {
-    const directoryUrl = new URL("./library/", window.location.href).toString();
+    const directoryUrl = new URL(`./${LIBRARY_DIRECTORY_NAME}/`, window.location.href).toString();
     const directoryResponse = await fetch(directoryUrl, { cache: "no-store" });
 
     if (!directoryResponse.ok) {
@@ -803,6 +837,85 @@ class PrompterApp {
     return libraryItems;
   }
 
+  async fetchLibraryItemsFromGitHubPages() {
+    const repositoryContext = this.getGitHubPagesRepositoryContext();
+
+    if (!repositoryContext) {
+      throw new Error("GitHub Pages repository context is unavailable");
+    }
+
+    const directoryUrl = new URL(
+      `/repos/${repositoryContext.owner}/${repositoryContext.repo}/contents/${LIBRARY_DIRECTORY_NAME}`,
+      GITHUB_API_ORIGIN
+    ).toString();
+    const directoryResponse = await fetch(directoryUrl, {
+      cache: "no-store",
+      headers: {
+        Accept: "application/vnd.github+json",
+      },
+    });
+
+    if (!directoryResponse.ok) {
+      throw new Error(`GitHub library request failed with ${directoryResponse.status}`);
+    }
+
+    const directoryEntries = await directoryResponse.json();
+
+    if (!Array.isArray(directoryEntries)) {
+      return [];
+    }
+
+    const libraryItems = [];
+    const fileEntries = directoryEntries.filter((entry) => {
+      return (
+        entry &&
+        entry.type === "file" &&
+        typeof entry.name === "string" &&
+        typeof entry.download_url === "string" &&
+        isSupportedLibraryFile(entry.name)
+      );
+    });
+
+    for (const fileEntry of fileEntries) {
+      const fileResponse = await fetch(fileEntry.download_url, { cache: "no-store" });
+
+      if (!fileResponse.ok) {
+        continue;
+      }
+
+      const fileName = fileEntry.name;
+      const fileContents = await fileResponse.text();
+
+      if (!fileContents.trim()) {
+        continue;
+      }
+
+      if (fileName.toLowerCase().endsWith(".json")) {
+        try {
+          const parsedItem = JSON.parse(fileContents);
+
+          libraryItems.push({
+            title: parsedItem.title,
+            fileName,
+            description: parsedItem.description,
+            content: parsedItem.content,
+          });
+        } catch {
+          // Ignore malformed JSON entries and keep loading the rest.
+        }
+
+        continue;
+      }
+
+      libraryItems.push({
+        fileName,
+        content: fileContents,
+      });
+    }
+
+    return libraryItems;
+  }
+
   async fetchLibraryItemsFromSource() {
     if (window.location.protocol === "file:") {
       return this.fetchLibraryItemsFromApiUrls(this.getDedicatedLibraryApiUrls());
@@ -812,6 +925,18 @@ class PrompterApp {
 
     if (window.location.port === String(LIBRARY_API_PORT)) {
       return this.fetchLibraryItemsFromApiUrls([currentLibraryApiUrl]);
+    }
+
+    if (this.isGitHubPagesHost()) {
+      try {
+        return await this.fetchLibraryItemsFromGitHubPages();
+      } catch {
+        if (this.hasEmbeddedLibrarySnapshot()) {
+          return this.getEmbeddedLibrarySnapshot();
+        }
+
+        throw new Error("GitHub Pages library fetch failed");
+      }
     }
 
     if (this.shouldPreferEmbeddedLibrarySnapshot()) {
@@ -899,24 +1024,33 @@ class PrompterApp {
         Array.isArray(window.PROMPTER_LIBRARY) ? window.PROMPTER_LIBRARY : []
       );
       const hasSnapshot = fallbackItems.length > 0;
+      const isGitHubPages = this.isGitHubPagesHost();
 
       this.libraryItems = fallbackItems;
       this.libraryEmptyMessage = hasSnapshot
-        ? "Live refresh is unavailable. Run `node server.mjs`, then click Refresh Library again."
-        : "No saved scripts found. Run `node server.mjs` and add `.md`, `.txt`, or `.json` files to library/.";
+        ? isGitHubPages
+          ? "GitHub refresh is unavailable right now. Showing the bundled snapshot instead."
+          : "Live refresh is unavailable. Run `node server.mjs`, then click Refresh Library again."
+        : isGitHubPages
+          ? "No saved scripts were found in the deployed GitHub repository."
+          : "No saved scripts found. Run `node server.mjs` and add `.md`, `.txt`, or `.json` files to library/.";
       this.renderLibraryItems(
         hasSnapshot
           ? `${fallbackItems.length} saved ${
               fallbackItems.length === 1 ? "script" : "scripts"
-            } (snapshot)`
+            }${isGitHubPages ? " (bundled snapshot)" : " (snapshot)"}`
           : "Library server unavailable"
       );
       this.setLibraryLoading(
         false,
         manual
           ? hasSnapshot
-            ? "Refresh failed. Showing saved snapshot."
-            : "Refresh failed. Start node server.mjs."
+            ? isGitHubPages
+              ? "Refresh failed. Showing the bundled snapshot."
+              : "Refresh failed. Showing saved snapshot."
+            : isGitHubPages
+              ? "Refresh failed. GitHub repository data is unavailable."
+              : "Refresh failed. Start node server.mjs."
           : ""
       );
     }
