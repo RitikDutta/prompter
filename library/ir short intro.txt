@@ -1,0 +1,5 @@
+Hi, I’m Ritik Dutta. I’m a Data Scientist and AI Engineer with 4 years of experience building GenAI, RAG, and computer vision systems.
+
+Currently, I’m working as a Tech Lead at Animal Badge Marketing, where I build LLM-based assistants, RAG pipelines, and scalable backend systems. Previously, at iNeuron, I built real-time face recognition and object detection systems that reduced operational costs by around 80%.
+
+I’ve also worked on GenAI-focused projects with organizations like NavGurukul, OTS Solutions, and Bot Consulting. Overall, I enjoy building end-to-end AI systems that create real business impact.
